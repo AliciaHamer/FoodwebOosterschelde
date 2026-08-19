@@ -1,0 +1,130 @@
+---
+title: "Voedselweb Oosterschelde"
+format:
+  html:
+    embed-resources: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+library(visNetwork)
+```
+
+
+Gemaakt met de R-package visNetwork, voor meer informatie zie: 
+- https://cran.r-project.org/web/packages/visNetwork/vignettes/Introduction-to-visNetwork.html
+- https://datastorm-open.github.io/visNetwork/legend.html
+
+
+Trofische niveaus lopen van links (producenten/detritus) naar rechts (topconsumenten).
+
+```{r}
+nodes <- data.frame(
+  id = c(
+    # level 0: producenten + detritus
+    "fyto", "microfyto", "macrofyt", "detritus",
+    # level 1: primaire consumenten
+    "zoopl", "schelp", "macrofauna",
+    # level 2: secundaire consumenten
+    "krab", "vis",
+    # level 3: topconsumenten
+    "zeezoog", "herbvogel", "benthvogel", "visvogel"
+  ),
+  label = c(
+    "Fytoplankton", "Microfytobenthos", "Macrofyten", "Detritus",
+    "Zoöplankton", "Macrofauna /\nfiltrerende schelpdieren", "Macrofauna /\ndeposit feeders",
+    "Krabben /\nZeesterren", "Vis",
+    "Zeezoogdieren", "Herbivore\nvogels", "Benthivore\nvogels", "Visetende\nvogels"
+  ),
+  group = c(
+    "producent", "producent", "producent", "detritus",
+    "primair", "primair", "primair",
+    "secundair", "secundair",
+    "top", "top", "top", "top"
+  ),
+  title = c(
+    "Primaire productie: fytoplankton <br> Standing stock: ~ 1.2 g/m2 (Smaal et al. 2013)",
+    "Primaire productie: microfytobenthos <br> ~ 1.6 g/m2 (Smaal et al. 2013)",
+    "Macrofyten (zeegras/kwelderplanten)",
+    "Detritus / organisch materiaal  <br> ~ 1.9 g/m2 (Smaal & Nienhuis 1992)",
+    "Zoöplankton <br> ~ 0.5 g/m2 (Smaal & Nienhuis 1992)",
+    "Kokkels, mosselen, oesters <br>Standing stock:  ~ 11.5 g/m2 (Smaal et al. 2013)",
+    "Bodemfauna / deposit feeders <br> ~ 2.2 g/m2 (Smaal & Nienhuis 1992)",
+    "Krabben en zeesterren",
+    "Vis",
+    "Zeezoogdieren (bv. zeehond)",
+    "Herbivore vogels (grazen op macrofyten)",
+    "Benthivore vogels (eten bodemdieren)",
+    "Visetende vogels"
+  ),
+  level = c(0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 3, 3, 3),
+  shape = "box"
+)
+
+edges <- data.frame(
+  from = c(
+    "detritus", "detritus",
+    "fyto", "fyto",
+    "microfyto", "microfyto",
+    "macrofyt",
+    "zoopl",
+    "schelp", "schelp", "schelp",
+    "macrofauna",
+    "krab", "krab",
+    "vis", "vis",
+    "zeezoog"
+  ),
+  to = c(
+    "schelp", "macrofauna",
+    "zoopl", "schelp",
+    "schelp", "macrofauna",
+    "herbvogel",
+    "vis",
+    "krab", "vis", "benthvogel",
+    "vis",
+    "vis", "benthvogel",
+    "visvogel", "zeezoog",
+    "visvogel"
+  ),
+    title = c(
+    "Detritus → Schelpdieren", "Detritus → Macrofauna",
+    "Fytoplankton → Zoöplankton <br> < 25-50 g/m2/yr (Smaal & Nienhuis 1992)", "Fytoplankton → Schelpdieren",
+    "Microfytobenthos → Schelpdieren", "Microfytobenthos → Macrofauna <br> < 25 g/m2/yr (Smaal & Nienhuis 1992)",
+    "Macrofyten → Herbivore vogels",
+    "Zoöplankton → Vis",
+    "Schelpdieren → Krabben", "Schelpdieren → Vis", "Schelpdieren → Benthivore vogels",
+    "Macrofauna → Vis",
+    "Krabben → Vis", "Krabben → Benthivore vogels",
+    "Vis → Visetende vogels", "Vis → Zeezoogdieren",
+    "Zeezoogdieren → Visetende vogels"
+  ),
+  arrows = "to"
+)
+
+visNetwork(nodes, edges, width = "100%", height = "560px") |>
+  visGroups(groupname = "detritus",  color = list(background = "#FAEEDA", border = "#854F0B")) |>
+  visGroups(groupname = "producent", color = list(background = "#EAF3DE", border = "#3B6D11")) |>
+  visGroups(groupname = "primair",   color = list(background = "#E6F1FB", border = "#185FA5")) |>
+  visGroups(groupname = "secundair", color = list(background = "#FAECE7", border = "#993C1D")) |>
+  visGroups(groupname = "top",       color = list(background = "#FBEAF0", border = "#993556")) |>
+  visEdges(color = list(color = "#888780", highlight = "#D85A30"),
+           smooth = list(type = "cubicBezier", roundness = 0.4)) |>
+  visHierarchicalLayout(direction = "LR", sortMethod = "hubsize",
+                         levelSeparation = 160, nodeSpacing = 90) |>
+  visPhysics(enabled = FALSE) |>
+  visInteraction(hover = TRUE, tooltipDelay = 100) |>
+  visOptions(highlightNearest = list(enabled = TRUE, degree = 1, hover = FALSE))
+```
+
+**Bronnen**
+
+Didderen, K., Spruijt, D. S., de Haan, E., & Bakker, E. G. R. (2025). Quickscan Systeemanalyse Oosterschelde.
+
+Dijkman, N. (2026). CONCEPT PrimaireProductie_Zeeland_2021_2025_Concept_versie2_20260523.
+
+Smaal, A. C., Schellekens, T., van Stralen, M. R., & Kromkamp, J. C. (2013). Decrease of the carrying capacity of the Oosterschelde estuary (SW Delta, NL) for bivalve filter feeders due to overgrazing? Aquaculture, 404–405, 28–34. https://doi.org/10.1016/j.aquaculture.2013.04.008
+
+
+
+
+

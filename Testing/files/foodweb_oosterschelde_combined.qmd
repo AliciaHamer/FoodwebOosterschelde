@@ -1,0 +1,183 @@
+---
+title: "Voedselweb Oosterschelde (synthese)"
+format:
+  html:
+    embed-resources: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+```
+
+Deze figuur combineert vier bronnen tot een netwerk:
+
+- algemeen voedselweb Oosterschelde (Wijsman, 2019)
+- intergetijdeplaat voedselweb (Ysebaert, 2017)
+- vereenvoudigd trofisch schema (Figuur 4.1)
+- koolstofbudget pre-/post-Deltawerken (Smaal & Nienhuis, 1992)
+
+Trofische niveaus lopen van links (producenten/detritus) naar rechts (topconsumenten).
+Klik op een knoop om de directe koppelingen te markeren. Met het schuifje onder de
+figuur kun je de pijldikte laten meeschalen met de (illustratieve) biomassaflux.
+
+```{r build-data}
+nodes <- data.frame(
+  id = c(
+    "fyto", "microfyto", "macrofyt", "detritus",
+    "zoopl", "schelp", "macrofauna",
+    "krab", "vis",
+    "zeezoog", "herbvogel", "benthvogel", "visvogel"
+  ),
+  label = c(
+    "Fytoplankton", "Microfytobenthos", "Macrofyten", "Detritus",
+    "Zooplankton", "Schelpdieren /\\nBodemdieren", "Macrofauna /\\ndeposit feeders",
+    "Krabben /\\nZeesterren", "Vis",
+    "Zeezoogdieren", "Herbivore\\nvogels", "Benthivore\\nvogels", "Visetende\\nvogels"
+  ),
+  group = c(
+    "producent", "producent", "producent", "detritus",
+    "primair", "primair", "primair",
+    "secundair", "secundair",
+    "top", "top", "top", "top"
+  ),
+  title = c(
+    "Primaire productie: fytoplankton",
+    "Primaire productie: microfytobenthos",
+    "Macrofyten (zeegras/wieren)",
+    "Detritus / organisch materiaal",
+    "Zooplankton",
+    "Kokkels, mosselen, oesters, tunicaten",
+    "Bodemfauna / deposit feeders",
+    "Krabben en zeesterren",
+    "Vis",
+    "Zeezoogdieren (bv. zeehond)",
+    "Herbivore vogels (grazen op macrofyten)",
+    "Benthivore vogels (eten bodemdieren)",
+    "Visetende vogels"
+  ),
+  level = c(0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 3, 3, 3),
+  stringsAsFactors = FALSE
+)
+
+# LET OP: flux is een ILLUSTRATIEVE plaatshouder (schaal 1-4, naar analogie van
+# de <25 / 25-50 / 50-100 / 100-200 gC/m2/jr klassen uit Fig. 8, Smaal & Nienhuis
+# 1992). Dit zijn GEEN gemeten waarden voor dit samengestelde netwerk - vervang
+# door echte fluxdata zodra die per koppeling beschikbaar is.
+edges <- data.frame(
+  id = 0:16,
+  from = c(
+    "detritus", "detritus",
+    "fyto", "fyto",
+    "microfyto", "microfyto",
+    "macrofyt",
+    "zoopl",
+    "schelp", "schelp", "schelp",
+    "macrofauna",
+    "krab", "krab",
+    "vis", "vis",
+    "zeezoog"
+  ),
+  to = c(
+    "schelp", "macrofauna",
+    "zoopl", "schelp",
+    "schelp", "macrofauna",
+    "herbvogel",
+    "vis",
+    "krab", "vis", "benthvogel",
+    "vis",
+    "vis", "benthvogel",
+    "visvogel", "zeezoog",
+    "visvogel"
+  ),
+  flux = c(3, 3, 4, 4, 3, 3, 1, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1),
+  stringsAsFactors = FALSE
+)
+
+group_colors <- list(
+  detritus  = c(bg = "#FAEEDA", border = "#854F0B"),
+  producent = c(bg = "#EAF3DE", border = "#3B6D11"),
+  primair   = c(bg = "#E6F1FB", border = "#185FA5"),
+  secundair = c(bg = "#FAECE7", border = "#993C1D"),
+  top       = c(bg = "#FBEAF0", border = "#993556")
+)
+
+node_js <- vapply(seq_len(nrow(nodes)), function(i) {
+  n   <- nodes[i, ]
+  col <- group_colors[[n$group]]
+  sprintf(
+    "{id:'%s', label:'%s', title:'%s', level:%d, shape:'box', margin:10, font:{size:14}, color:{background:'%s', border:'%s'}}",
+    n$id, n$label, n$title, n$level, col[["bg"]], col[["border"]]
+  )
+}, character(1))
+nodes_js <- paste0("[\n", paste(node_js, collapse = ",\n"), "\n]")
+
+edge_js <- vapply(seq_len(nrow(edges)), function(i) {
+  e <- edges[i, ]
+  sprintf("{id:%d, from:'%s', to:'%s', flux:%d, arrows:'to'}", e$id, e$from, e$to, e$flux)
+}, character(1))
+edges_js <- paste0("[\n", paste(edge_js, collapse = ",\n"), "\n]")
+```
+
+```{r render-widget, results='asis'}
+cat(sprintf('
+<div id="fw-container" style="width:100%%; height:560px; border:1px solid #ddd; border-radius:6px;"></div>
+<div style="font-family: sans-serif; font-size: 14px; margin-top: 8px;">
+  <label><input type="checkbox" id="fluxToggle"> Toon biomassaflux (pijldikte)</label>
+  <p style="font-size:12px; color:#5F5E5A; margin-top:4px;">
+    Pijldiktes zijn illustratief (schaal 1-4) en nog niet gebaseerd op gemeten fluxdata.
+  </p>
+</div>
+<script src="vis-network.min.js"></script>
+<script>
+(function() {
+  var nodesData = %s;
+  var edgesData = %s;
+  var nodes = new vis.DataSet(nodesData);
+  var edges = new vis.DataSet(edgesData);
+  var container = document.getElementById("fw-container");
+  var network = new vis.Network(container, {nodes: nodes, edges: edges}, {
+    layout: {hierarchical: {direction: "LR", sortMethod: "hubsize", levelSeparation: 160, nodeSpacing: 90}},
+    physics: false,
+    interaction: {hover: true, tooltipDelay: 100},
+    edges: {width: 2, color: {color: "#888780", highlight: "#D85A30"}, smooth: {type: "cubicBezier", roundness: 0.4}}
+  });
+
+  var checkbox = document.getElementById("fluxToggle");
+  checkbox.addEventListener("change", function() {
+    var updates = [];
+    edges.forEach(function(e) {
+      var fluxWidth = (e.flux || 1) * 2;
+      updates.push({id: e.id, width: checkbox.checked ? fluxWidth : 2});
+    });
+    edges.update(updates);
+  });
+
+  network.on("click", function(params) {
+    if (params.nodes.length) {
+      var connected = network.getConnectedEdges(params.nodes[0]);
+      edges.forEach(function(e) {
+        edges.update({id: e.id, color: {color: connected.indexOf(e.id) !== -1 ? "#D85A30" : "#D3D1C7"}});
+      });
+    } else {
+      edges.forEach(function(e) {
+        edges.update({id: e.id, color: {color: "#888780"}});
+      });
+    }
+  });
+})();
+</script>
+', nodes_js, edges_js))
+```
+
+**Toelichting / vereenvoudigingen**
+
+- De bidirectionele pijl Vogels-Vis in figuur A is hier weggelaten; alleen de trofische
+  richting (Vis naar Visetende vogels) is opgenomen.
+- Detritus is gekoppeld aan Schelpdieren en Macrofauna, in lijn met het koolstofbudget
+  van Smaal & Nienhuis (1992).
+- `level` is expliciet gezet per node zodat de vier bronnen consistent op dezelfde
+  trofische as staan, ook waar een pijl niveaus overslaat (bv. Macrofyten naar
+  Herbivore vogels).
+- De `flux`-kolom is een placeholder-schaal (1-4) om de schuifje-functionaliteit te
+  demonstreren. Vervang deze door echte biomassa- of koolstofflux-waarden zodra die
+  per koppeling beschikbaar zijn; anders geeft de pijldikte een misleidend beeld.
