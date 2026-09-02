@@ -9,7 +9,6 @@ format:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
 library(visNetwork)
-library(dplyr)
 ```
 
 
@@ -19,6 +18,7 @@ Gemaakt met de R-package visNetwork, voor meer informatie zie:
 
 
 Trofische niveaus lopen van links (producenten/detritus) naar rechts (topconsumenten).
+Dubbelklik op "Filtreerende schelpdieren" om kokkels, mosselen en oesters afzonderlijk te tonen.
 
 # 1.0 Oosterschelde
 
@@ -137,7 +137,7 @@ edges <- data.frame(
     
     "Detritus → Filtreerders           <br> 50-100 g/m2/yr (Smaal & Nienhuis 1992)",   #1
     "Detritus → Depositfeeder          <br> < 25 g/m2/yr (Smaal & Nienhuis 1992)",
-    "Detritus → Depositfeeder          <br> < 25 g/m2/yr (Smaal & Nienhuis 1992)",
+    "Detritus → Microfytobenthos       <br> < 25 g/m2/yr (Smaal & Nienhuis 1992)",
     "Fytoplankton → Zoöplankton        <br> < 25 g/m2/yr (Smaal & Nienhuis 1992)",     #2
     "Fytoplankton → Filtreerders       <br> 25-50 g/m2/yr (Smaal & Nienhuis 1992)",  #hier het getal voor zowel cockles als mossels genomen
     "Microfytobenthos → Detritus       <br> < 25 g/m2/yr (Smaal & Nienhuis 1992)",     #3
@@ -171,51 +171,125 @@ visNetwork(nodes, edges, width = "100%", height = "560px") |>
                          levelSeparation = 160, nodeSpacing = 90) |>
   visPhysics(enabled = FALSE) |>
   visInteraction(hover = TRUE, tooltipDelay = 100) |>
-  visOptions(highlightNearest = list(enabled = TRUE, degree = 1, hover = FALSE))
+  visEvents(click = "function(params) {
+    var groupColors = {
+      sun:       {background:'#FEDC56', border:'#854F06'},
+      detritus:  {background:'#FAEEDA', border:'#854F0B'},
+      producent: {background:'#EAF3DE', border:'#3B6D11'},
+      primair:   {background:'#E6F1FB', border:'#185FA5'},
+      secundair: {background:'#FAECE7', border:'#993C1D'},
+      top:       {background:'#FBEAF0', border:'#993556'}
+    };
+    var self = this;
+
+    if (params.nodes.length === 1) {
+      var clickedId = params.nodes[0];
+      var connectedNodeIds = self.getConnectedNodes(clickedId);
+      connectedNodeIds.push(clickedId);
+      var connectedEdgeIds = self.getConnectedEdges(clickedId);
+
+      var nodeUpdates = self.body.data.nodes.map(function(n) {
+        var isConnected = connectedNodeIds.indexOf(n.id) !== -1;
+        var size = (n.font && n.font.size) ? n.font.size : 12;
+        return {
+          id: n.id,
+          color: isConnected ? groupColors[n.group] : {background:'#F2F1ED', border:'#D3D1C7'},
+          font: {color: isConnected ? '#2C2C2A' : '#ABAAA4', size: size}
+        };
+      });
+      self.body.data.nodes.update(nodeUpdates);
+
+      var edgeUpdates = self.body.data.edges.map(function(e) {
+        var isConnected = connectedEdgeIds.indexOf(e.id) !== -1;
+        return {id: e.id, color: {color: isConnected ? '#D85A30' : '#D3D1C7'}};
+      });
+      self.body.data.edges.update(edgeUpdates);
+    } else {
+      var nodeUpdates = self.body.data.nodes.map(function(n) {
+        var size = (n.font && n.font.size) ? n.font.size : 12;
+        return {id: n.id, color: groupColors[n.group], font: {color:'#2C2C2A', size: size}};
+      });
+      self.body.data.nodes.update(nodeUpdates);
+      var edgeUpdates = self.body.data.edges.map(function(e) {
+        return {id: e.id, color: {color: '#888780'}};
+      });
+      self.body.data.edges.update(edgeUpdates);
+    }
+  }") |>
+  visEvents(doubleClick = "function(params) {
+    var kids = ['kokkel', 'mossel', 'oester'];
+    var clickedKid = params.nodes.length === 1 && kids.indexOf(params.nodes[0]) !== -1;
+    var clickedSchelp = params.nodes.length === 1 && params.nodes[0] === 'schelp';
+    if (!clickedKid && !clickedSchelp) return;
+
+    var groupColors = {
+      sun:       {background:'#FEDC56', border:'#854F06'},
+      detritus:  {background:'#FAEEDA', border:'#854F0B'},
+      producent: {background:'#EAF3DE', border:'#3B6D11'},
+      primair:   {background:'#E6F1FB', border:'#185FA5'},
+      secundair: {background:'#FAECE7', border:'#993C1D'},
+      top:       {background:'#FBEAF0', border:'#993556'}
+    };
+
+    if (clickedSchelp) {
+      var schelpNode = this.body.data.nodes.get('schelp');
+      var schelpEdgeIds = this.getConnectedEdges('schelp');
+      window.__schelpNodeBackup = schelpNode;
+      window.__schelpEdgesBackup = this.body.data.edges.get(schelpEdgeIds);
+
+      this.body.data.edges.remove(schelpEdgeIds);
+      this.body.data.nodes.remove(['schelp']);
+
+      this.body.data.nodes.add([
+        {id:'kokkel', label:'Kokkels', group:'primair', level:1, shape:'box', title:'Cerastoderma edule'},
+        {id:'mossel', label:'Mosselen', group:'primair', level:1, shape:'box', title:'Mytilus edulis'},
+        {id:'oester', label:'Oesters', group:'primair', level:1, shape:'box', title:'Crassostrea gigas'}
+      ]);
+
+      var newEdges = [];
+      kids.forEach((k) => {
+        newEdges.push({from:'fyto', to:k, arrows:'to'});
+        newEdges.push({from:'microfyto', to:k, arrows:'to'});
+        newEdges.push({from:'detritus', to:k, arrows:'to'});
+        newEdges.push({from:k, to:'krab', arrows:'to'});
+        newEdges.push({from:k, to:'vis', arrows:'to'});
+        newEdges.push({from:k, to:'benthvogel', arrows:'to'});
+        newEdges.push({from:k, to:'detritus', arrows:'to'});
+      });
+      this.body.data.edges.add(newEdges);
+    } else if (clickedKid) {
+      var kidEdgeIds = [];
+      kids.forEach((k) => {
+        kidEdgeIds = kidEdgeIds.concat(this.getConnectedEdges(k));
+      });
+      this.body.data.nodes.remove(kids);
+      this.body.data.edges.remove(kidEdgeIds);
+
+      if (window.__schelpNodeBackup) {
+        this.body.data.nodes.add(window.__schelpNodeBackup);
+        this.body.data.edges.add(window.__schelpEdgesBackup);
+      }
+    }
+
+    // reset alle kleuren, want highlightNearest raakt de kluts kwijt
+    // zodra 'schelp' precies op het klikmoment verdwijnt/verschijnt
+    var self = this;
+    setTimeout(function() {
+      var nodeUpdates = self.body.data.nodes.map(function(n) {
+        return {id: n.id, color: groupColors[n.group] || undefined};
+      });
+      self.body.data.nodes.update(nodeUpdates);
+      var edgeUpdates = self.body.data.edges.map(function(e) {
+        return {id: e.id, color: {color: '#888780'}};
+      });
+      self.body.data.edges.update(edgeUpdates);
+      self.fit();
+    }, 0);
+  }")
 
 ```
 
 # 2.0 Oosterschelde per Compartiment
-
-
-Testing area
-```{r}
-
-
-
-# Source - https://stackoverflow.com/q/60565313
-# Posted by Marian, modified by community. See post 'Timeline' for change history
-# Retrieved 2026-09-02, License - CC BY-SA 4.0
-
-library(dplyr)
-library(visNetwork)
-
-nod <- tibble(id = c (1,2,3,4,5,6), label = c("a","b","c","d","e","f"), x= c(0,1,2,3,3,2)*150,y = c(0,0,0,0,-1,1)*150)
-
-
-# standard behavior
-edg <- tibble(id = 1:5, from = c(1,2,3,3,3), to = c(2,3,4,5,6))
-edg <- edg %>% mutate(arrows = c("to","to","to","to","to"))
-
-
-# first solution: under the hood arrows starting from d, e and f and arrow head is at the from-node
-edg <- tibble(id = 1:5, from = c(1,2,4,5,6), to = c(2,3,3,3,3))
-edg <- edg %>% mutate(arrows = c("to","to","from","from","from"))
-
-##
-graph <- visNetwork(nod, edg) %>% 
-  visEdges(smooth = F) %>%
-  visNodes(fixed = TRUE) %>%
-  visOptions(collapse = list(enabled = T, keepCoord = T)) %>%
-  visPhysics(enabled = F) %>%
-  visLayout(randomSeed = 123)
-
-
-
-```
-
-
-
 
 ## 2.1 Oost
 
@@ -228,8 +302,3 @@ Didderen, K., Spruijt, D. S., de Haan, E., & Bakker, E. G. R. (2025). Quickscan 
 Dijkman, N. (2026). CONCEPT PrimaireProductie_Zeeland_2021_2025_Concept_versie2_20260523.
 
 Smaal, A. C., Schellekens, T., van Stralen, M. R., & Kromkamp, J. C. (2013). Decrease of the carrying capacity of the Oosterschelde estuary (SW Delta, NL) for bivalve filter feeders due to overgrazing? Aquaculture, 404–405, 28–34. https://doi.org/10.1016/j.aquaculture.2013.04.008
-
-
-
-
-
