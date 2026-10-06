@@ -1,0 +1,135 @@
+---
+title: "Voedselweb Oosterschelde"
+page-layout: full
+format:
+  html:
+    embed-resources: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+library(visNetwork)
+library(readxl)
+```
+
+
+Gemaakt met de R-package visNetwork, voor meer informatie zie: 
+- https://cran.r-project.org/web/packages/visNetwork/vignettes/Introduction-to-visNetwork.html
+- https://datastorm-open.github.io/visNetwork/legend.html
+
+
+Trofische niveaus lopen van links (producenten/detritus) naar rechts (topconsumenten).
+Dubbelklik op een groep met onderdelen (bv. "Filtreerende schelpdieren") om die uit te klappen; dubbelklik op een onderdeel om hem weer in te klappen.
+
+# 1.0 Oosterschelde
+
+```{r}
+# Alle knopen en pijlen komen uit de invultabel (zelfde map als dit script)
+tabel <- "Voedselweb_InvulTabel.xlsx"
+
+nodes <- as.data.frame(read_excel(tabel, sheet = "R_Nodes"))
+nodes <- nodes[!is.na(nodes$id), ]
+
+edges <- as.data.frame(read_excel(tabel, sheet = "R_Edges"))
+edges <- edges[!is.na(edges$from) & !is.na(edges$to), ]
+edges$width <- as.numeric(edges$width)
+
+# onderdelen zonder group/level krijgen die van hun groep (parent)
+ouder <- match(nodes$parent, nodes$id)
+for (kol in c("group", "level")) {
+  leeg <- is.na(nodes[[kol]]) & !is.na(ouder)
+  nodes[[kol]][leeg] <- nodes[[kol]][ouder[leeg]]
+}
+
+# interactiviteit: klik = highlight, dubbelklik = groep in-/uitklappen
+js <- r"---(
+function(el, x) {
+  var net = this.network, N = net.body.data.nodes, E = net.body.data.edges;
+  var G = x.options.groups, E0 = x.options.edges.color;   // kleuren komen uit visGroups/visEdges
+  var DIM = {background: '#F2F1ED', border: '#D3D1C7'};
+  var alleNodes = JSON.parse(JSON.stringify(N.get()));    // alles uit de Excel
+  var alleEdges = JSON.parse(JSON.stringify(E.get()));
+  var byId = {}; alleNodes.forEach(function(n) { byId[n.id] = n; });
+  var open = {};                                          // uitgeklapte groepen
+
+  // zichtbaar = zelf niet uitgeklapt en alle bovenliggende groepen wel
+  function zichtbaar(n) {
+    if (open[n.id]) return false;
+    for (var p = n.parent; p; p = byId[p] && byId[p].parent) if (!open[p]) return false;
+    return true;
+  }
+
+  // toon alleen zichtbare knopen, en pijlen waarvan beide uiteinden zichtbaar zijn
+  function teken() {
+    var nz = alleNodes.filter(zichtbaar);
+    var ids = nz.map(function(n) { return n.id; });
+    N.clear(); E.clear();
+    N.add(nz);
+    E.add(alleEdges.filter(function(e) { return ids.indexOf(e.from) > -1 && ids.indexOf(e.to) > -1; }));
+    net.fit();
+  }
+
+  // aan = {nodes, edges} die gemarkeerd blijven; null = alles normaal
+  function kleur(aan) {
+    N.update(N.map(function(n) {
+      var on = !aan || aan.nodes.indexOf(n.id) > -1;
+      var c = G[n.group] ? G[n.group].color : {background: '#97C2FC', border: '#2B7CE9'};
+      return {id: n.id, color: on ? c : DIM,
+              font: {color: on ? '#2C2C2A' : '#ABAAA4', size: (n.font && n.font.size) || 12}};
+    }));
+    E.update(E.map(function(e) {
+      return {id: e.id, color: {color: !aan ? E0.color : aan.edges.indexOf(e.id) > -1 ? E0.highlight : '#D3D1C7'}};
+    }));
+  }
+
+  net.on('click', function(p) {
+    var id = p.nodes[0];
+    kleur(id ? {nodes: net.getConnectedNodes(id).concat(id), edges: net.getConnectedEdges(id)} : null);
+  });
+
+  net.on('doubleClick', function(p) {
+    var id = p.nodes[0];
+    if (!id) return;
+    var heeftOnderdelen = alleNodes.some(function(n) { return n.parent === id; });
+    if (heeftOnderdelen) open[id] = true;                  // groep uitklappen
+    else if (byId[id].parent) delete open[byId[id].parent]; // onderdeel: groep inklappen
+    else return;
+    setTimeout(teken, 0);
+  });
+
+  teken();
+}
+)---"
+
+visNetwork(nodes, edges, width = "100%", height = "560px") |>
+  visGroups(groupname = "sun", shape = "circle",       
+            color = list(background = "#FEDC56", border = "#854F06")) |>
+  visGroups(groupname = "detritus",  color = list(background = "#FAEEDA", border = "#854F0B")) |>
+  visGroups(groupname = "producent", color = list(background = "#EAF3DE", border = "#3B6D11")) |>
+  visGroups(groupname = "primair",   color = list(background = "#E6F1FB", border = "#185FA5")) |>
+  visGroups(groupname = "secundair", color = list(background = "#FAECE7", border = "#993C1D")) |>
+  visGroups(groupname = "top",       color = list(background = "#FBEAF0", border = "#993556")) |>
+  visNodes(shape = "box") |>                                 # standaard als shape leeg is
+  visEdges(color = list(color = "#888780", highlight = "#D85A30"), arrows = "to",
+           smooth = list(type = "curvedCW", roundness = 0.2)) |>  #cubicBezier is mooier
+  visHierarchicalLayout(direction = "LR", sortMethod = "hubsize",
+                         levelSeparation = 160, nodeSpacing = 90) |>
+  visPhysics(enabled = FALSE) |>
+  visInteraction(hover = TRUE, tooltipDelay = 100) |>
+  htmlwidgets::onRender(js)
+
+```
+
+# 2.0 Oosterschelde per Compartiment
+
+## 2.1 Oost
+
+## 2.2 West
+
+**Bronnen**
+
+Didderen, K., Spruijt, D. S., de Haan, E., & Bakker, E. G. R. (2025). Quickscan Systeemanalyse Oosterschelde.
+
+Dijkman, N. (2026). CONCEPT PrimaireProductie_Zeeland_2021_2025_Concept_versie2_20260523.
+
+Smaal, A. C., Schellekens, T., van Stralen, M. R., & Kromkamp, J. C. (2013). Decrease of the carrying capacity of the Oosterschelde estuary (SW Delta, NL) for bivalve filter feeders due to overgrazing? Aquaculture, 404–405, 28–34. https://doi.org/10.1016/j.aquaculture.2013.04.008
